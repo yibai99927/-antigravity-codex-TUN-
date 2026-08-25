@@ -1,10 +1,24 @@
 ﻿# Windows 下 AI 工具免 TUN 代理配置与排坑指南
 
-> **核心目标**：在 Windows 11 环境下，完全**不开启 TUN 模式**（仅使用 Clash Verge / Mihomo 的普通系统代理端口 `127.0.0.1:7897`），解决以下两大难题：
+[**简体中文**](./README.md) | [**English**](./README_EN.md)
+
+> **核心目标**：在 Windows 11 环境下，完全**不开启 TUN 模式**（使用 Clash / Mihomo / v2ray 等本地代理端口，如 `7897` 或 `7890`），解决以下两大难题：
 > 1. **Codex Desktop**：手机端（iOS / Android）无法远程控制桌面端 Codex。
 > 2. **Antigravity CLI (`agy`)**：无法完成 Google OAuth 登录认证及大模型调用。
 >
 > 且**不修改 Windows 系统全局环境变量**，对日常命令行（`git`、`pip`、`python`、`npm`、SSH 连远程服务器等）实现**绝对零污染、零干扰**。
+
+---
+
+> ⚠️ **代理端口声明（非固定写死）**：
+> 文档与脚本中默认使用的 `7897` 为 **Clash Verge (Mihomo)** 的常见本地混合端口。
+> **请根据您实际使用的代理客户端端口进行替换**：
+> * **Clash Verge (Mihomo)** 常见端口：`7897`
+> * **Clash for Windows / Clash Core** 常见端口：`7890`
+> * **v2rayN / Xray** 常见 HTTP 端口：`10809`
+> * **SagerNet / Sing-box** 常见端口：`2080` / `7890`
+> 
+> *脚本均支持动态传入端口参数，例如：`.\setup-agy.ps1 -ProxyPort 7890`*。
 
 ---
 
@@ -29,7 +43,7 @@
 | 模式 | 工作原理 | 适用范围 | 优缺点 |
 | :--- | :--- | :--- | :--- |
 | **TUN 模式** | 创建虚拟网卡（L3 网络层驱动），强制接管系统所有出站流量（TCP/UDP/DNS） | 所有软件无需配置代理即可走分流 | 兼容性高，但可能与虚拟机（VMware/Hyper-V）、内网穿透（Tailscale/ZeroTier）或校园网/企业 VPN 产生路由冲突 |
-| **普通系统代理** | 仅在 Windows 注册表设置 HTTP 代理（`127.0.0.1:7897`） | 仅主动读取 WinINET 的图形应用（如 Chrome/Edge） | 对系统网络无侵入，但命令行工具、UWP 沙盒应用和非标准长连接默认无法走代理 |
+| **普通系统代理** | 仅在 Windows 注册表设置 HTTP 代理（`127.0.0.1:<PORT>`） | 仅主动读取 WinINET 的图形应用（如 Chrome/Edge） | 对系统网络无侵入，但命令行工具、UWP 沙盒应用和非标准长连接默认无法走代理 |
 
 ---
 
@@ -40,7 +54,7 @@ Codex Desktop（Windows 版本）由两部分组成：
 2. **后台常驻服务 (`codex.exe`)**：Win32 守护进程，负责与 OpenAI 云端（`wss://chatgpt.com/backend-api/...`）维持 WebSocket / WebRTC 长连接，手机端控制指令通过此云端中继分发。
 
 #### 阻断点：
-* **UWP 回环网络隔离（Loopback Isolation）**：Windows 默认禁止 UWP 应用访问本地 `127.0.0.1`。即使开启系统代理，前端应用也无法连上 `127.0.0.1:7897`，连接会被内核直接切断。
+* **UWP 回环网络隔离（Loopback Isolation）**：Windows 默认禁止 UWP 应用访问本地 `127.0.0.1`。即使开启系统代理，前端应用也无法连上 `127.0.0.1:<PORT>`，连接会被内核直接切断。
 * **后台守护进程不读 WinINET**：Win32 进程 `codex.exe` 仅读取环境变量（`HTTP_PROXY`）或专属配置。若未注入代理，它会尝试物理 Wi-Fi 直连，触发 GFW 阻断（Socket 处于 `SynSent` 挂起超时）。
 
 ---
@@ -69,15 +83,15 @@ CheckNetIsolation.exe LoopbackExempt -a "-n=OpenAI.Codex_2p2nqsd0c76g0"
 ```
 
 #### 步骤 2：创建局部环境配置文件（零系统污染）
-在 `~/.codex/.env` 中写入以下配置，仅供 Codex 守护进程和主程序读取：
+在 `~/.codex/.env` 中写入以下配置，仅供 Codex 守护进程和主程序读取（*将 `<PORT>` 替换为您的代理端口，如 `7897` 或 `7890`*）：
 ```ini
-HTTP_PROXY=http://127.0.0.1:7897
-HTTPS_PROXY=http://127.0.0.1:7897
-ALL_PROXY=http://127.0.0.1:7897
+HTTP_PROXY=http://127.0.0.1:<PORT>
+HTTPS_PROXY=http://127.0.0.1:<PORT>
+ALL_PROXY=http://127.0.0.1:<PORT>
 NO_PROXY=localhost,127.0.0.1,::1,192.168.*,10.*
-http_proxy=http://127.0.0.1:7897
-https_proxy=http://127.0.0.1:7897
-all_proxy=http://127.0.0.1:7897
+http_proxy=http://127.0.0.1:<PORT>
+https_proxy=http://127.0.0.1:<PORT>
+all_proxy=http://127.0.0.1:<PORT>
 no_proxy=localhost,127.0.0.1,::1,192.168.*,10.*
 ```
 
@@ -97,7 +111,7 @@ Start-Process "shell:AppsFolder\OpenAI.Codex_2p2nqsd0c76g0!App"
 * PowerShell 7: `$HOME\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`
 * Windows PowerShell 5.1: `$HOME\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
 
-#### 写入代码：
+#### 写入代码（*将 `<PORT>` 替换为您的代理端口*）：
 ```powershell
 function agy {
     # 1. 备份当前环境变量
@@ -108,9 +122,9 @@ function agy {
 
     try {
         # 2. 仅在此次运行 agy 期间注入代理
-        $env:HTTP_PROXY = "http://127.0.0.1:7897"
-        $env:HTTPS_PROXY = "http://127.0.0.1:7897"
-        $env:ALL_PROXY = "http://127.0.0.1:7897"
+        $env:HTTP_PROXY = "http://127.0.0.1:<PORT>"
+        $env:HTTPS_PROXY = "http://127.0.0.1:<PORT>"
+        $env:ALL_PROXY = "http://127.0.0.1:<PORT>"
         $env:NO_PROXY = "localhost,127.0.0.1,::1,192.168.*,10.*"
 
         # 3. 完整透传所有子命令与参数
@@ -129,9 +143,9 @@ function agy {
 #### Git Bash 支持（`~/.bash_profile`）：
 ```bash
 function agy() {
-    HTTP_PROXY="http://127.0.0.1:7897" \
-    HTTPS_PROXY="http://127.0.0.1:7897" \
-    ALL_PROXY="http://127.0.0.1:7897" \
+    HTTP_PROXY="http://127.0.0.1:<PORT>" \
+    HTTPS_PROXY="http://127.0.0.1:<PORT>" \
+    ALL_PROXY="http://127.0.0.1:<PORT>" \
     NO_PROXY="localhost,127.0.0.1,::1,192.168.*,10.*" \
     "$HOME/AppData/Local/agy/bin/agy.exe" "$@"
 }
@@ -141,13 +155,13 @@ function agy() {
 
 ## 三、 自动化运维脚本说明
 
-本仓库在 [`scripts/`](./scripts/) 目录下提供了即插即用的自动化运维脚本：
+本仓库在 [`scripts/`](./scripts/) 目录下提供了即插即用的自动化运维脚本，**全部支持自定义代理端口**：
 
-| 脚本 | 描述 |
-| :--- | :--- |
-| [`scripts/check-status.ps1`](./scripts/check-status.ps1) | 一键检测 Codex UWP 豁免、实时 Socket 连接状态与代理连通性 |
-| [`scripts/setup-codex.ps1`](./scripts/setup-codex.ps1) | 自动配置 `.codex/.env` 并重启桌面端实例 |
-| [`scripts/setup-agy.ps1`](./scripts/setup-agy.ps1) | 自动配置 PowerShell 7、5.1 和 Git Bash 配置文件 |
+| 脚本 | 默认执行 | 自定义端口示例 | 描述 |
+| :--- | :--- | :--- | :--- |
+| [`scripts/check-status.ps1`](./scripts/check-status.ps1) | `.\check-status.ps1` | `.\check-status.ps1 -ProxyPort 7890` | 一键检测 Codex UWP 豁免、实时 Socket 连接状态与代理连通性 |
+| [`scripts/setup-codex.ps1`](./scripts/setup-codex.ps1) | `.\setup-codex.ps1` | `.\setup-codex.ps1 -ProxyPort 7890` | 自动配置 `.codex/.env` 并重启桌面端实例 |
+| [`scripts/setup-agy.ps1`](./scripts/setup-agy.ps1) | `.\setup-agy.ps1` | `.\setup-agy.ps1 -ProxyPort 7890` | 自动配置 PowerShell 7、5.1 和 Git Bash 配置文件 |
 
 ---
 
@@ -158,5 +172,5 @@ function agy() {
 * **软件升级**：`agy update` 和 Codex Desktop 升级仅替换二进制程序，不会修改用户目录下的配置与环境脚本。
 
 ### Q2: 为什么不直接在 Windows 系统环境变量里加 `HTTP_PROXY`？
-* 如果写入系统全局环境变量，当临时关闭代理软件时，终端中执行 `pip`、`npm`、`git` 或 Python 爬虫脚本会因找不到 `7897` 端口而报错（`Connection Refused`）。
+* 如果写入系统全局环境变量，当临时关闭代理软件时，终端中执行 `pip`、`npm`、`git` 或 Python 爬虫脚本会因找不到代理端口而报错（`Connection Refused`）。
 * 局部注入方案做到了“各取所需、互不干扰”，保证开发环境的纯洁性。
